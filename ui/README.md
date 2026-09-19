@@ -5,10 +5,22 @@ dossiers `results/` via DuckDB) + frontend React/Vite (`frontend/`).
 
 ## Lancer le backend
 
-```bash
-pip install -e ".[ui]"   # depuis la racine du dépôt (fastapi, uvicorn, duckdb)
+**Important** : utiliser l'environnement virtuel du projet (`.venv` à la
+racine du dépôt), pas le Python global — installer dans le Python
+global peut échouer (fichiers verrouillés dans `Scripts/`) ou mélanger
+les dépendances avec d'autres projets.
+
+Depuis la racine du dépôt (PowerShell) :
+
+```powershell
+.venv\Scripts\Activate.ps1   # crée le venv d'abord si besoin : python -m venv .venv
+pip install -e ".[ui]"       # fastapi, uvicorn, duckdb
 python -m uvicorn ui.backend.main:app --port 8000 --reload
 ```
+
+Le prompt doit afficher `(.venv)` avant de lancer `pip install` — sinon
+l'activation n'a pas fonctionné (vérifier qu'on est bien à la racine du
+dépôt, là où se trouve le dossier `.venv`).
 
 ## Lancer le frontend
 
