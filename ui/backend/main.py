@@ -20,7 +20,10 @@ app = FastAPI(title="g2048 dashboard API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    # Vite prend le premier port libre à partir de 5173 (5174, 5175, ...
+    # si plusieurs instances tournent) : on autorise tout port localhost
+    # plutôt que de figer un numéro de port.
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
