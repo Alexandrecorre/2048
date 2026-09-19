@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "g2048"
+version = "0.1.0"
+description = "2048 game engine (Rust) + experimentation harness (Python)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "maturin"]
+
+[tool.maturin]
+manifest-path = "crates/py-bindings/Cargo.toml"
+module-name = "g2048._g2048"
+python-source = "python"

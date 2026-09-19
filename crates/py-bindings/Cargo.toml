@@ -1,0 +1,12 @@
+[package]
+name = "g2048-py"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "_g2048"
+crate-type = ["cdylib"]
+
+[dependencies]
+g2048-core = { path = "../core" }
+pyo3 = { version = "0.22", features = ["extension-module"] }

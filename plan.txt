@@ -1,0 +1,87 @@
+# Plan du projet
+
+## Chapitre 0 — Cadrage (½ journée)
+
+- Écrire les questions de recherche :
+  - « Quelles pistes améliorent la performance ? »
+  - « Apprentissage par TD ou par évolution : lequel est le plus efficace ? »
+  - « Combien la recherche compense-t-elle une mauvaise évaluation ? »
+- Figer les métriques : taux de réussite par palier, survie (nombre de coups), score, temps par coup, efficacité d'apprentissage.
+- **Critère de sortie** : un README d'une page avec les questions, les métriques et le périmètre, y compris ce qui est explicitement hors périmètre.
+
+## Chapitre 1 — Architecture et socle (1 week-end)
+
+- Monorepo : workspace Cargo (`core`, `py-bindings`) + package Python + dossier `experiments/` + dossier `ui/`.
+- Build avec maturin, tests Rust (`cargo test`) et Python (`pytest`), CI GitHub Actions minimale.
+- Formats figés dès le départ :
+  - Config d'expérience en TOML : agent, pistes activées, hyperparamètres, seeds, nombre de parties.
+  - Résultats en Parquet : une ligne par partie.
+  - Replays en JSONL compact : seed + séquence de coups, ce qui suffit pour rejouer une partie à l'identique.
+- **Critère de sortie** : un « hello world » Rust appelé depuis Python passe en CI.
+
+## Chapitre 2 — Moteur de jeu en Rust (1 à 2 week-ends)
+
+- Représentation bitboard `u64` : 16 cases × 4 bits, chaque case contient l'exposant de la tuile.
+- Tables précalculées : 65 536 lignes possibles → résultat du déplacement à gauche et gain de score. Les autres directions s'obtiennent par symétrie ou transposition.
+- Séparation stricte entre `apply_move(state, dir)` (déterministe) et `spawn(state, rng)` (aléatoire). Expectimax a besoin de cette séparation.
+- RNG seedable (PCG ou ChaCha) injecté, jamais global.
+- API : `new(seed)`, `legal_moves()`, `apply_move()`, `spawn()`, `is_terminal()`, `score()`, `max_tile()`.
+- Tests : une implémentation naïve de référence (tableau 4×4, lisible), puis des tests par propriétés (proptest) qui vérifient que bitboard et référence donnent le même résultat sur des millions d'états aléatoires. C'est ton filet de sécurité pour tout le reste du projet.
+- Benchmark avec criterion.
+- **Critère de sortie** : tous les tests d'équivalence passent, et le moteur tourne à au moins 10 M coups/s sur un cœur.
+
+## Chapitre 3 — Bindings et harnais d'expérimentation (1 week-end)
+
+- Exposer à Python une API de haut niveau : `run_batch(config) -> résultats`, pas une API coup par coup.
+- Une API coup par coup en plus, lente mais pratique pour le débogage et le deep RL : interface type Gymnasium (`reset`, `step`).
+- CLI : `python -m g2048 run experiments/xxx.toml` → écrit `results/<nom>_<date>/` avec la config copiée, les résultats Parquet, les replays et les métadonnées (commit Git, machine, durée).
+- Parallélisation avec rayon côté Rust.
+- **Critère de sortie** : une expérience est rejouable à l'identique à partir de son dossier de résultats.
+
+## Chapitre 4 — Agents de référence (1 week-end)
+
+- Aléatoire, glouton sur le score immédiat, stratégie fixe « coin » (bas, gauche, bas, gauche…), Monte Carlo pur (N simulations aléatoires par coup possible).
+- Script d'analyse minimal (pandas ou polars) qui produit les métriques du chapitre 0.
+- **Critère de sortie** : un tableau de référence. Toutes les IA futures seront comparées à ces lignes.
+
+## Chapitre 5 — Bibliothèque de « pistes » (1 week-end)
+
+- Implémentées en Rust, chacune activable ou désactivable par config : cases vides, monotonie, régularité, tuile max dans un coin, fusions disponibles, somme pondérée « en serpent ».
+- Normaliser les valeurs pour que les poids soient comparables.
+- Une évaluation = produit scalaire poids · features.
+- **Critère de sortie** : chaque feature a des tests unitaires sur des grilles construites à la main.
+
+## Chapitre 6 — Apprentissage des poids (2 à 3 week-ends, le cœur du projet)
+
+- **6a. Optimisation évolutionnaire** (CMA-ES ou algorithme génétique simple). Chaque individu est un vecteur de poids, et sa fitness est sa performance moyenne sur K parties avec des seeds fixes. C'est simple, robuste et très parallélisable.
+- **6b. TD learning linéaire** : TD(0) sur l'état après déplacement (afterstate), qui est la formulation standard pour 2048.
+- **6c. Témoin sans pistes** : réseau n-tuple sur la grille brute. C'est la référence « aucune connaissance donnée ».
+- Profondeur de recherche fixée à 1 pendant toute cette phase, pour isoler l'effet de l'information donnée.
+- Protocole d'ablation : toutes les pistes, puis toutes sauf une, puis chacune seule, puis aucune.
+- Enregistrer les courbes d'apprentissage (performance tous les X parties d'entraînement).
+- **Critère de sortie** : une matrice « pistes × méthode d'apprentissage × performance », avec intervalles de confiance.
+
+## Chapitre 7 — Recherche (1 à 2 week-ends)
+
+- Expectimax à profondeur variable, avec l'évaluation apprise au chapitre 6.
+- Élagage des nœuds de hasard peu probables, table de transposition (cache des états déjà évalués).
+- Expérience clé : profondeur × qualité de l'évaluation. À partir de quelle profondeur une évaluation pauvre rattrape-t-elle une évaluation riche ?
+- **Critère de sortie** : courbes performance / temps par coup.
+
+## Chapitre 8 — Deep RL, optionnel (3 week-ends ou plus)
+
+- PyTorch côté Python, via l'API Gymnasium.
+- DQN ou PPO, avec deux types d'entrée : grille brute encodée en one-hot par exposant, ou vecteur de pistes.
+- Attentes réalistes : l'objectif est d'apprendre et de comparer, pas de battre le chapitre 7.
+- **Critère de sortie** : l'agent est intégré à la matrice de comparaison.
+
+## Chapitre 9 — IHM (1 à 2 week-ends)
+
+- **Dashboard** : il lit les dossiers `results/`, filtre par expérience et affiche distributions, courbes d'apprentissage et matrice d'ablation.
+- **Viewer** : rejoue un replay coup par coup avec la grille, les valeurs des features et le coup choisi avec les scores des alternatives.
+- **Stack** : React + une petite API FastAPI qui lit les fichiers Parquet (avec DuckDB, c'est trivial). C'est ton terrain connu. Si tu veux un dashboard en une journée, Streamlit pour le dashboard, et React seulement pour le viewer.
+- **Critère de sortie** : tu peux répondre visuellement à chaque question du chapitre 0.
+
+## Chapitre 10 — Synthèse
+
+- Une page de conclusions par question de recherche. C'est ce qui transforme un projet perso en quelque chose de présentable.

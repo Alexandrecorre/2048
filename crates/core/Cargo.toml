@@ -1,0 +1,9 @@
+[package]
+name = "g2048-core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "g2048_core"
+
+[dependencies]
