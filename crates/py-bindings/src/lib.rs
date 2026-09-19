@@ -93,6 +93,14 @@ impl Env {
     fn score(&self) -> u64 {
         self.state.score()
     }
+
+    /// Vecteur de features (chapitre 5) du plateau courant, pour
+    /// l'entrée "features" du deep RL (chapitre 8) plutôt que la grille
+    /// brute one-hot.
+    fn features(&self, enabled: Vec<String>) -> PyResult<Vec<f64>> {
+        let enabled = parse_features(enabled)?;
+        Ok(g2048_core::features::compute(self.state.board(), &enabled))
+    }
 }
 
 fn parse_features(names: Vec<String>) -> PyResult<Vec<g2048_core::features::Feature>> {

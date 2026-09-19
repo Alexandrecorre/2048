@@ -30,8 +30,8 @@ POOR_WEIGHTS = [1.0]
 
 # Moins de parties aux profondeurs élevées pour rester dans un temps
 # raisonnable (le facteur de branchement de l'expectimax croît vite).
-GAMES_PER_DEPTH = {1: 30, 2: 30, 3: 20, 4: 10, 5: 5}
-MAX_MOVES = 2000
+GAMES_PER_DEPTH = {1: 20, 2: 20, 3: 15, 4: 6, 5: 3}
+MAX_MOVES = 800
 
 
 def train_rich_weights(*, seed: int = 0) -> list[float]:
