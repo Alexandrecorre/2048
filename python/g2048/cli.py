@@ -36,6 +36,15 @@ def main(argv: list[str] | None = None) -> None:
     search_parser.add_argument("out_dir", type=Path)
     search_parser.add_argument("--seed", type=int, default=0)
 
+    dqn_parser = subparsers.add_parser(
+        "train-dqn", help="Chapitre 8 (optionnel) : entraîne un DQN (grille brute ou features)"
+    )
+    dqn_parser.add_argument("out_dir", type=Path)
+    dqn_parser.add_argument("--representation", choices=["onehot", "features"], default="onehot")
+    dqn_parser.add_argument("--episodes", type=int, default=500)
+    dqn_parser.add_argument("--max-moves", type=int, default=1000)
+    dqn_parser.add_argument("--seed", type=int, default=0)
+
     args = parser.parse_args(argv)
 
     if args.command == "run":
@@ -64,6 +73,21 @@ def main(argv: list[str] | None = None) -> None:
         with pl.Config(tbl_cols=-1, tbl_width_chars=240, tbl_rows=-1):
             print(df.sort(["evaluation", "depth"]))
         print(f"Résultats écrits dans {args.out_dir}")
+    elif args.command == "train-dqn":
+        from .deep_rl import DqnConfig, save_weights, train_dqn
+
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        config = DqnConfig(
+            representation=args.representation,
+            episodes=args.episodes,
+            max_moves=args.max_moves,
+            seed=args.seed,
+        )
+        net, history = train_dqn(config)
+        save_weights(net, args.out_dir / f"dqn_{args.representation}.pt")
+        pl.DataFrame(history).write_parquet(args.out_dir / f"dqn_{args.representation}_history.parquet")
+        print(f"Historique (dernier point) : {history[-1] if history else 'aucun'}")
+        print(f"Poids et historique écrits dans {args.out_dir}")
 
 
 if __name__ == "__main__":

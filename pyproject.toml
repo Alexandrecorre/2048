@@ -11,6 +11,8 @@ dependencies = ["polars"]
 
 [project.optional-dependencies]
 dev = ["pytest", "maturin"]
+# Chapitre 8 (optionnel) : deep RL, non nécessaire au reste du projet.
+deep_rl = ["torch"]
 
 [tool.maturin]
 manifest-path = "crates/py-bindings/Cargo.toml"
