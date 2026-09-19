@@ -2,7 +2,9 @@
 //! et apparition de tuiles aléatoire (RNG injecté, jamais global).
 
 mod board;
+pub mod agent;
 pub mod naive;
+pub mod runner;
 
 pub use board::{apply_move, max_tile, spawn, Direction};
 

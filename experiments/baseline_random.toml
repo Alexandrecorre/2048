@@ -1,0 +1,6 @@
+# Expérience de référence (chapitre 4) : agent aléatoire pur.
+name = "baseline_random"
+agent = "random"
+num_games = 200
+seed = 42
+max_moves = 5000

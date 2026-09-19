@@ -1,0 +1,187 @@
+//! Harnais d'expérimentation (chapitre 3) : config TOML, exécution d'un lot
+//! de parties en parallèle (rayon), et rejeu déterministe à partir d'une
+//! seed et d'une séquence de coups.
+
+use crate::agent::{Agent, RandomAgent};
+use crate::{Direction, GameState};
+use rand::SeedableRng;
+use rand_pcg::Pcg64Mcg;
+use rayon::prelude::*;
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExperimentConfig {
+    pub name: String,
+    pub agent: String,
+    pub num_games: usize,
+    pub seed: u64,
+    #[serde(default)]
+    pub max_moves: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GameResult {
+    pub seed: u64,
+    pub score: u64,
+    pub max_tile: u32,
+    pub num_moves: usize,
+    pub duration_ms: f64,
+    pub moves: Vec<u8>,
+}
+
+pub fn parse_config(text: &str) -> Result<ExperimentConfig, toml::de::Error> {
+    toml::from_str(text)
+}
+
+pub fn direction_to_u8(d: Direction) -> u8 {
+    match d {
+        Direction::Left => 0,
+        Direction::Right => 1,
+        Direction::Up => 2,
+        Direction::Down => 3,
+    }
+}
+
+pub fn u8_to_direction(v: u8) -> Direction {
+    match v {
+        0 => Direction::Left,
+        1 => Direction::Right,
+        2 => Direction::Up,
+        _ => Direction::Down,
+    }
+}
+
+fn make_agent(name: &str, seed: u64) -> Result<Box<dyn Agent>, String> {
+    match name {
+        // Décorrélé de la seed de spawn (constante golden-ratio) pour que
+        // les choix de l'agent ne soient pas synchronisés avec les tuiles.
+        "random" => Ok(Box::new(RandomAgent::new(Pcg64Mcg::seed_from_u64(
+            seed ^ 0x9E37_79B9_7F4A_7C15,
+        )))),
+        other => Err(format!(
+            "agent inconnu: '{other}' (le chapitre 4 en ajoutera d'autres)"
+        )),
+    }
+}
+
+/// Joue une partie complète avec l'agent donné. Le résultat contient la
+/// séquence de coups jouée : `seed + moves` suffit à rejouer la partie à
+/// l'identique via [`replay`], indépendamment de l'agent qui l'a produite.
+pub fn play_one_game(
+    seed: u64,
+    agent_name: &str,
+    max_moves: Option<usize>,
+) -> Result<GameResult, String> {
+    let start = std::time::Instant::now();
+    let mut state = GameState::new(seed);
+    let mut agent = make_agent(agent_name, seed)?;
+    let limit = max_moves.unwrap_or(usize::MAX);
+    let mut moves_log = Vec::new();
+
+    while moves_log.len() < limit {
+        match agent.choose_move(&state) {
+            Some(dir) => {
+                let moved = state.apply_move(dir);
+                debug_assert!(moved, "l'agent a proposé un coup illégal");
+                moves_log.push(direction_to_u8(dir));
+                state.spawn();
+            }
+            None => break,
+        }
+    }
+
+    Ok(GameResult {
+        seed,
+        score: state.score(),
+        max_tile: state.max_tile(),
+        num_moves: moves_log.len(),
+        duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+        moves: moves_log,
+    })
+}
+
+/// Exécute un lot de parties en parallèle (une seed par partie, dérivée de
+/// `config.seed`).
+pub fn run_batch(config: &ExperimentConfig) -> Result<Vec<GameResult>, String> {
+    (0..config.num_games)
+        .into_par_iter()
+        .map(|i| play_one_game(config.seed + i as u64, &config.agent, config.max_moves))
+        .collect()
+}
+
+/// Rejoue une partie à partir de sa seed et de sa séquence de coups
+/// enregistrée, sans dépendre de l'agent d'origine.
+pub fn replay(seed: u64, moves: &[u8]) -> Result<GameResult, String> {
+    let start = std::time::Instant::now();
+    let mut state = GameState::new(seed);
+    for &m in moves {
+        let dir = u8_to_direction(m);
+        if !state.apply_move(dir) {
+            return Err(format!("coup illégal enregistré à l'index {m}"));
+        }
+        state.spawn();
+    }
+    Ok(GameResult {
+        seed,
+        score: state.score(),
+        max_tile: state.max_tile(),
+        num_moves: moves.len(),
+        duration_ms: start.elapsed().as_secs_f64() * 1000.0,
+        moves: moves.to_vec(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_config() -> ExperimentConfig {
+        ExperimentConfig {
+            name: "test".to_string(),
+            agent: "random".to_string(),
+            num_games: 8,
+            seed: 123,
+            max_moves: Some(500),
+        }
+    }
+
+    #[test]
+    fn parses_minimal_toml_config() {
+        let text = r#"
+            name = "baseline_random"
+            agent = "random"
+            num_games = 100
+            seed = 42
+        "#;
+        let config = parse_config(text).unwrap();
+        assert_eq!(config.name, "baseline_random");
+        assert_eq!(config.num_games, 100);
+        assert_eq!(config.max_moves, None);
+    }
+
+    #[test]
+    fn run_batch_produces_one_result_per_game() {
+        let config = sample_config();
+        let results = run_batch(&config).unwrap();
+        assert_eq!(results.len(), 8);
+    }
+
+    #[test]
+    fn replay_reproduces_the_exact_same_outcome() {
+        let config = sample_config();
+        let results = run_batch(&config).unwrap();
+        for original in results {
+            let replayed = replay(original.seed, &original.moves).unwrap();
+            assert_eq!(replayed.score, original.score);
+            assert_eq!(replayed.max_tile, original.max_tile);
+            assert_eq!(replayed.num_moves, original.num_moves);
+        }
+    }
+
+    #[test]
+    fn unknown_agent_is_a_clean_error_not_a_panic() {
+        let mut config = sample_config();
+        config.agent = "nonexistent".to_string();
+        assert!(run_batch(&config).is_err());
+    }
+}
