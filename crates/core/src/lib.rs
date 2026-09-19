@@ -3,6 +3,7 @@
 
 mod board;
 pub mod agent;
+pub mod features;
 pub mod naive;
 pub mod runner;
 
