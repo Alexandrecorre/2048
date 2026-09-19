@@ -34,6 +34,10 @@ impl Feature {
             Feature::SnakeWeighted => "snake_weighted",
         }
     }
+
+    pub fn from_name(name: &str) -> Option<Feature> {
+        Feature::ALL.into_iter().find(|f| f.name() == name)
+    }
 }
 
 fn cells(board: u64) -> [u8; 16] {

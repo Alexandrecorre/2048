@@ -95,11 +95,169 @@ impl Env {
     }
 }
 
+fn parse_features(names: Vec<String>) -> PyResult<Vec<g2048_core::features::Feature>> {
+    names
+        .into_iter()
+        .map(|n| {
+            g2048_core::features::Feature::from_name(&n)
+                .ok_or_else(|| PyValueError::new_err(format!("feature inconnue: '{n}'")))
+        })
+        .collect()
+}
+
+fn history_to_pylist(
+    py: Python<'_>,
+    history: Vec<g2048_core::train::LearningPoint>,
+) -> PyResult<Vec<PyObject>> {
+    history
+        .into_iter()
+        .map(|p| {
+            let d = PyDict::new_bound(py);
+            d.set_item("steps", p.steps)?;
+            d.set_item("mean_score", p.mean_score)?;
+            Ok(d.into())
+        })
+        .collect()
+}
+
+/// 6a. Optimisation évolutionnaire : `enabled` liste les noms de features
+/// (chapitre 5) à activer, ex. `["empty_cells", "monotonicity"]`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn train_evolution(
+    py: Python<'_>,
+    enabled: Vec<String>,
+    population_size: usize,
+    generations: usize,
+    games_per_eval: usize,
+    max_moves: usize,
+    mutation_std: f64,
+    elite_fraction: f64,
+    seed: u64,
+) -> PyResult<PyObject> {
+    let enabled = parse_features(enabled)?;
+    let config = g2048_core::train::evolution::EvolutionConfig {
+        enabled,
+        population_size,
+        generations,
+        games_per_eval,
+        max_moves,
+        mutation_std,
+        elite_fraction,
+        seed,
+    };
+    let result = g2048_core::train::evolution::run(&config);
+    let dict = PyDict::new_bound(py);
+    dict.set_item("best_weights", result.best_weights)?;
+    dict.set_item("history", history_to_pylist(py, result.history)?)?;
+    Ok(dict.into())
+}
+
+/// 6b. TD(0) sur afterstate avec les features du chapitre 5.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn train_td_features(
+    py: Python<'_>,
+    enabled: Vec<String>,
+    games: usize,
+    max_moves: usize,
+    alpha: f64,
+    seed: u64,
+    eval_every: usize,
+    eval_games: usize,
+) -> PyResult<PyObject> {
+    let enabled = parse_features(enabled)?;
+    let model = g2048_core::train::td::FeatureModel { enabled };
+    let config = g2048_core::train::td::TdConfig {
+        games,
+        max_moves,
+        alpha,
+        seed,
+        eval_every,
+        eval_games,
+    };
+    let (weights, history) = g2048_core::train::td::run(&model, &config);
+    let dict = PyDict::new_bound(py);
+    dict.set_item("weights", weights)?;
+    dict.set_item("history", history_to_pylist(py, history)?)?;
+    Ok(dict.into())
+}
+
+/// 6c. TD(0) sur afterstate avec le témoin n-tuple (grille brute, sans
+/// connaissance du jeu).
+#[pyfunction]
+fn train_td_ntuple(
+    py: Python<'_>,
+    games: usize,
+    max_moves: usize,
+    alpha: f64,
+    seed: u64,
+    eval_every: usize,
+    eval_games: usize,
+) -> PyResult<PyObject> {
+    let model = g2048_core::train::td::NTupleModel;
+    let config = g2048_core::train::td::TdConfig {
+        games,
+        max_moves,
+        alpha,
+        seed,
+        eval_every,
+        eval_games,
+    };
+    let (weights, history) = g2048_core::train::td::run(&model, &config);
+    let dict = PyDict::new_bound(py);
+    dict.set_item("weights", weights)?;
+    dict.set_item("history", history_to_pylist(py, history)?)?;
+    Ok(dict.into())
+}
+
+/// Score individuel de chaque partie jouée par un agent à profondeur 1
+/// avec ces poids de features, utile pour calculer un intervalle de
+/// confiance côté analyse Python. `seed_offset` permet un échantillon de
+/// test disjoint de l'entraînement.
+#[pyfunction]
+fn scores_of_feature_weights(
+    enabled: Vec<String>,
+    weights: Vec<f64>,
+    num_games: usize,
+    max_moves: usize,
+    seed_offset: u64,
+) -> PyResult<Vec<u64>> {
+    let enabled = parse_features(enabled)?;
+    Ok(g2048_core::train::scores_of(
+        move |board| g2048_core::features::evaluate(board, &enabled, &weights),
+        num_games,
+        max_moves,
+        seed_offset,
+    ))
+}
+
+/// Équivalent de [`scores_of_feature_weights`] pour le témoin n-tuple.
+#[pyfunction]
+fn scores_of_ntuple_weights(
+    weights: Vec<f64>,
+    num_games: usize,
+    max_moves: usize,
+    seed_offset: u64,
+) -> Vec<u64> {
+    g2048_core::train::scores_of(
+        move |board| g2048_core::train::ntuple::value(board, &weights),
+        num_games,
+        max_moves,
+        seed_offset,
+    )
+}
+
 #[pymodule]
 fn _g2048(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hello, m)?)?;
     m.add_function(wrap_pyfunction!(run_batch, m)?)?;
     m.add_function(wrap_pyfunction!(replay, m)?)?;
+    m.add_function(wrap_pyfunction!(train_evolution, m)?)?;
+    m.add_function(wrap_pyfunction!(train_td_features, m)?)?;
+    m.add_function(wrap_pyfunction!(train_td_ntuple, m)?)?;
+    m.add_function(wrap_pyfunction!(scores_of_feature_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(scores_of_ntuple_weights, m)?)?;
     m.add_class::<Env>()?;
     Ok(())
 }

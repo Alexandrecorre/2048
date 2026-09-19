@@ -154,6 +154,38 @@ impl<R: Rng> Agent for MonteCarloAgent<R> {
     }
 }
 
+/// Agent générique à profondeur de recherche 1 : joue le coup qui
+/// maximise `score_immédiat + evaluate(afterstate)`. Utilisé par les 3
+/// méthodes d'apprentissage du chapitre 6 (seuls les poids/évaluateur
+/// changent) ; le chapitre 7 remplacera la profondeur 1 par expectimax.
+pub struct EvalAgent<F: Fn(u64) -> f64> {
+    evaluate: F,
+}
+
+impl<F: Fn(u64) -> f64> EvalAgent<F> {
+    pub fn new(evaluate: F) -> Self {
+        Self { evaluate }
+    }
+}
+
+impl<F: Fn(u64) -> f64> Agent for EvalAgent<F> {
+    fn choose_move(&mut self, state: &GameState) -> Option<Direction> {
+        Direction::ALL
+            .iter()
+            .copied()
+            .filter_map(|d| {
+                let (new_board, gained) = apply_move(state.board(), d);
+                if new_board == state.board() {
+                    return None;
+                }
+                let value = gained as f64 + (self.evaluate)(new_board);
+                Some((d, value))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(d, _)| d)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +237,11 @@ mod tests {
     fn monte_carlo_agent_plays_full_games_without_illegal_moves() {
         let agent = MonteCarloAgent::new(Pcg64Mcg::seed_from_u64(7), 4, 20);
         play_out(agent, 3, 30);
+    }
+
+    #[test]
+    fn eval_agent_plays_full_games_without_illegal_moves() {
+        let agent = EvalAgent::new(|board: u64| crate::features::empty_cells(board));
+        play_out(agent, 4, 500);
     }
 }
