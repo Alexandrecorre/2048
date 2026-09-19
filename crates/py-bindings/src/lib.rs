@@ -67,6 +67,7 @@ fn replay_trajectory(py: Python<'_>, seed: u64, moves: Vec<u8>) -> PyResult<Vec<
                 })
                 .collect::<PyResult<_>>()?;
             d.set_item("move_options", options)?;
+            d.set_item("features", step.features)?;
             Ok(d.into())
         })
         .collect()

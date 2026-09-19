@@ -10,6 +10,14 @@ from typing import Any
 
 import duckdb
 
+# duckdb's module-level `duckdb.sql` uses a single shared default connection,
+# which is not safe under FastAPI's threaded concurrent requests (React's
+# StrictMode alone fires duplicate concurrent requests on mount). Each query
+# opens its own ephemeral in-memory connection instead.
+def _conn() -> duckdb.DuckDBPyConnection:
+    return duckdb.connect(":memory:")
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_ROOT = REPO_ROOT / "results"
 
@@ -57,7 +65,7 @@ def experiment_summary(name: str) -> dict[str, Any]:
     path = _experiment_path(name)
     parquet_path = str(path / "results.parquet")
 
-    row = duckdb.sql(
+    row = _conn().sql(
         f"""
         select
             count(*) as num_games,
@@ -73,7 +81,7 @@ def experiment_summary(name: str) -> dict[str, Any]:
     summary = dict(zip(columns, row))
 
     for milestone in MILESTONES:
-        rate = duckdb.sql(
+        rate = _conn().sql(
             f"""
             select avg(case when max_tile >= {milestone} then 1.0 else 0.0 end)
             from read_parquet('{parquet_path}')
@@ -87,7 +95,7 @@ def experiment_summary(name: str) -> dict[str, Any]:
 def experiment_scores(name: str) -> list[dict[str, Any]]:
     path = _experiment_path(name)
     parquet_path = str(path / "results.parquet")
-    rows = duckdb.sql(
+    rows = _conn().sql(
         f"select seed, score, max_tile, num_moves, duration_ms from read_parquet('{parquet_path}') order by seed"
     ).fetchall()
     return [
@@ -120,8 +128,8 @@ def experiment_replay_moves(name: str, seed: int) -> list[int]:
 def _read_parquet_if_exists(path: Path) -> list[dict[str, Any]] | None:
     if not path.exists():
         return None
-    rows = duckdb.sql(f"select * from read_parquet('{path}')").fetchall()
-    columns = [c[0] for c in duckdb.sql(f"describe select * from read_parquet('{path}')").fetchall()]
+    rows = _conn().sql(f"select * from read_parquet('{path}')").fetchall()
+    columns = [c[0] for c in _conn().sql(f"describe select * from read_parquet('{path}')").fetchall()]
     return [dict(zip(columns, r)) for r in rows]
 
 

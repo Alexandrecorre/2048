@@ -11,3 +11,6 @@ build/
 *.so
 *.pyd
 *.pdb
+node_modules/
+*.pt
+

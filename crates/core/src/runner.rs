@@ -201,6 +201,9 @@ pub struct TrajectoryStep {
     /// Calculé sur le plateau brut du jeu, indépendamment de l'agent
     /// d'origine (chapitre 9 : viewer).
     pub move_options: Vec<MoveOption>,
+    /// Valeurs des 6 features du chapitre 5 sur `board_before`, dans
+    /// l'ordre de [`crate::features::Feature::ALL`] (pour le viewer).
+    pub features: Vec<f64>,
 }
 
 fn board_to_exponents(board: u64) -> [u8; 16] {
@@ -245,6 +248,7 @@ pub fn replay_trajectory(seed: u64, moves: &[u8]) -> Result<Vec<TrajectoryStep>,
             gained,
             score_after: state.score(),
             move_options,
+            features: crate::features::compute(board_before, &crate::features::Feature::ALL),
         });
     }
 
