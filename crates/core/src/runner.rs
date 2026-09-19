@@ -2,7 +2,7 @@
 //! de parties en parallèle (rayon), et rejeu déterministe à partir d'une
 //! seed et d'une séquence de coups.
 
-use crate::agent::{Agent, RandomAgent};
+use crate::agent::{Agent, CornerAgent, GreedyAgent, MonteCarloAgent, RandomAgent};
 use crate::{Direction, GameState};
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
@@ -17,6 +17,20 @@ pub struct ExperimentConfig {
     pub seed: u64,
     #[serde(default)]
     pub max_moves: Option<usize>,
+    /// Nombre de simulations aléatoires par coup possible (agent "monte_carlo").
+    #[serde(default = "default_mc_simulations")]
+    pub mc_simulations: usize,
+    /// Profondeur maximale (en coups) d'une simulation Monte Carlo.
+    #[serde(default = "default_mc_rollout_moves")]
+    pub mc_rollout_moves: usize,
+}
+
+fn default_mc_simulations() -> usize {
+    50
+}
+
+fn default_mc_rollout_moves() -> usize {
+    200
 }
 
 #[derive(Debug, Clone)]
@@ -51,31 +65,33 @@ pub fn u8_to_direction(v: u8) -> Direction {
     }
 }
 
-fn make_agent(name: &str, seed: u64) -> Result<Box<dyn Agent>, String> {
-    match name {
-        // Décorrélé de la seed de spawn (constante golden-ratio) pour que
-        // les choix de l'agent ne soient pas synchronisés avec les tuiles.
+fn make_agent(config: &ExperimentConfig, seed: u64) -> Result<Box<dyn Agent>, String> {
+    // Décorrélée de la seed de spawn (constante golden-ratio) pour que les
+    // choix aléatoires de l'agent ne soient pas synchronisés avec les tuiles.
+    let agent_seed = seed ^ 0x9E37_79B9_7F4A_7C15;
+    match config.agent.as_str() {
         "random" => Ok(Box::new(RandomAgent::new(Pcg64Mcg::seed_from_u64(
-            seed ^ 0x9E37_79B9_7F4A_7C15,
+            agent_seed,
         )))),
-        other => Err(format!(
-            "agent inconnu: '{other}' (le chapitre 4 en ajoutera d'autres)"
-        )),
+        "greedy" => Ok(Box::new(GreedyAgent)),
+        "corner" => Ok(Box::new(CornerAgent::new())),
+        "monte_carlo" => Ok(Box::new(MonteCarloAgent::new(
+            Pcg64Mcg::seed_from_u64(agent_seed),
+            config.mc_simulations,
+            config.mc_rollout_moves,
+        ))),
+        other => Err(format!("agent inconnu: '{other}'")),
     }
 }
 
 /// Joue une partie complète avec l'agent donné. Le résultat contient la
 /// séquence de coups jouée : `seed + moves` suffit à rejouer la partie à
 /// l'identique via [`replay`], indépendamment de l'agent qui l'a produite.
-pub fn play_one_game(
-    seed: u64,
-    agent_name: &str,
-    max_moves: Option<usize>,
-) -> Result<GameResult, String> {
+pub fn play_one_game(config: &ExperimentConfig, seed: u64) -> Result<GameResult, String> {
     let start = std::time::Instant::now();
     let mut state = GameState::new(seed);
-    let mut agent = make_agent(agent_name, seed)?;
-    let limit = max_moves.unwrap_or(usize::MAX);
+    let mut agent = make_agent(config, seed)?;
+    let limit = config.max_moves.unwrap_or(usize::MAX);
     let mut moves_log = Vec::new();
 
     while moves_log.len() < limit {
@@ -105,7 +121,7 @@ pub fn play_one_game(
 pub fn run_batch(config: &ExperimentConfig) -> Result<Vec<GameResult>, String> {
     (0..config.num_games)
         .into_par_iter()
-        .map(|i| play_one_game(config.seed + i as u64, &config.agent, config.max_moves))
+        .map(|i| play_one_game(config, config.seed + i as u64))
         .collect()
 }
 
@@ -142,6 +158,8 @@ mod tests {
             num_games: 8,
             seed: 123,
             max_moves: Some(500),
+            mc_simulations: default_mc_simulations(),
+            mc_rollout_moves: default_mc_rollout_moves(),
         }
     }
 
@@ -164,6 +182,19 @@ mod tests {
         let config = sample_config();
         let results = run_batch(&config).unwrap();
         assert_eq!(results.len(), 8);
+    }
+
+    #[test]
+    fn every_reference_agent_can_play_a_batch() {
+        for agent in ["random", "greedy", "corner", "monte_carlo"] {
+            let mut config = sample_config();
+            config.agent = agent.to_string();
+            config.num_games = 2;
+            config.mc_simulations = 3;
+            config.mc_rollout_moves = 20;
+            let results = run_batch(&config).unwrap();
+            assert_eq!(results.len(), 2);
+        }
     }
 
     #[test]

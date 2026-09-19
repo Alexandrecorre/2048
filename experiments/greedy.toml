@@ -1,0 +1,6 @@
+# Agent glouton : maximise le score immédiat à chaque coup.
+name = "greedy"
+agent = "greedy"
+num_games = 200
+seed = 42
+max_moves = 5000

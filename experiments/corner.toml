@@ -1,0 +1,6 @@
+# Stratégie fixe "coin" : priorité bas > gauche > haut > droite.
+name = "corner"
+agent = "corner"
+num_games = 200
+seed = 42
+max_moves = 5000

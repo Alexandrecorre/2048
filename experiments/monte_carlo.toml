@@ -1,0 +1,8 @@
+# Monte Carlo pur : N simulations aléatoires par coup possible.
+name = "monte_carlo"
+agent = "monte_carlo"
+num_games = 50
+seed = 42
+max_moves = 3000
+mc_simulations = 50
+mc_rollout_moves = 200
