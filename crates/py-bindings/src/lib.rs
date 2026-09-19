@@ -248,6 +248,37 @@ fn scores_of_ntuple_weights(
     )
 }
 
+/// Chapitre 7 : joue un lot de parties avec un agent expectimax (poids de
+/// features du chapitre 5/6) et retourne, par partie, score/tuile max/
+/// nombre de coups/durée — pour tracer performance et temps par coup en
+/// fonction de la profondeur de recherche.
+#[pyfunction]
+fn run_expectimax(
+    py: Python<'_>,
+    enabled: Vec<String>,
+    weights: Vec<f64>,
+    depth: u8,
+    num_games: usize,
+    max_moves: usize,
+    seed_offset: u64,
+) -> PyResult<Vec<PyObject>> {
+    let enabled = parse_features(enabled)?;
+    let results =
+        g2048_core::search::run_batch(&enabled, &weights, depth, num_games, max_moves, seed_offset);
+    results
+        .into_iter()
+        .map(|r| {
+            let d = PyDict::new_bound(py);
+            d.set_item("seed", r.seed)?;
+            d.set_item("score", r.score)?;
+            d.set_item("max_tile", r.max_tile)?;
+            d.set_item("num_moves", r.num_moves)?;
+            d.set_item("duration_ms", r.duration_ms)?;
+            Ok(d.into())
+        })
+        .collect()
+}
+
 #[pymodule]
 fn _g2048(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hello, m)?)?;
@@ -258,6 +289,7 @@ fn _g2048(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(train_td_ntuple, m)?)?;
     m.add_function(wrap_pyfunction!(scores_of_feature_weights, m)?)?;
     m.add_function(wrap_pyfunction!(scores_of_ntuple_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(run_expectimax, m)?)?;
     m.add_class::<Env>()?;
     Ok(())
 }

@@ -29,6 +29,13 @@ def main(argv: list[str] | None = None) -> None:
     ablation_parser.add_argument("out_dir", type=Path)
     ablation_parser.add_argument("--seed", type=int, default=0)
 
+    search_parser = subparsers.add_parser(
+        "search-experiment",
+        help="Chapitre 7 : profondeur d'expectimax × qualité de l'évaluation",
+    )
+    search_parser.add_argument("out_dir", type=Path)
+    search_parser.add_argument("--seed", type=int, default=0)
+
     args = parser.parse_args(argv)
 
     if args.command == "run":
@@ -49,6 +56,14 @@ def main(argv: list[str] | None = None) -> None:
         with pl.Config(tbl_cols=-1, tbl_width_chars=240, tbl_rows=-1):
             print(matrix.sort("mean_score", descending=True))
         print(f"Matrice et courbes écrites dans {args.out_dir}")
+    elif args.command == "search-experiment":
+        from .search_experiment import run_experiment, save
+
+        df = run_experiment(seed=args.seed)
+        save(df, args.out_dir)
+        with pl.Config(tbl_cols=-1, tbl_width_chars=240, tbl_rows=-1):
+            print(df.sort(["evaluation", "depth"]))
+        print(f"Résultats écrits dans {args.out_dir}")
 
 
 if __name__ == "__main__":

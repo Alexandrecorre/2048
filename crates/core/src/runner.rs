@@ -23,6 +23,20 @@ pub struct ExperimentConfig {
     /// Profondeur maximale (en coups) d'une simulation Monte Carlo.
     #[serde(default = "default_mc_rollout_moves")]
     pub mc_rollout_moves: usize,
+    /// Pistes (chapitre 5) et poids (appris au chapitre 6) utilisés par
+    /// l'agent "expectimax" pour évaluer les feuilles de la recherche.
+    #[serde(default)]
+    pub features: Vec<String>,
+    #[serde(default)]
+    pub weights: Vec<f64>,
+    /// Profondeur de recherche (nombre de coups regardés en avant) de
+    /// l'agent "expectimax" (chapitre 7).
+    #[serde(default = "default_search_depth")]
+    pub search_depth: u8,
+}
+
+fn default_search_depth() -> u8 {
+    1
 }
 
 fn default_mc_simulations() -> usize {
@@ -80,6 +94,28 @@ fn make_agent(config: &ExperimentConfig, seed: u64) -> Result<Box<dyn Agent>, St
             config.mc_simulations,
             config.mc_rollout_moves,
         ))),
+        "expectimax" => {
+            let enabled: Vec<crate::features::Feature> = config
+                .features
+                .iter()
+                .map(|n| {
+                    crate::features::Feature::from_name(n)
+                        .ok_or_else(|| format!("feature inconnue: '{n}'"))
+                })
+                .collect::<Result<_, _>>()?;
+            if enabled.len() != config.weights.len() {
+                return Err(format!(
+                    "expectimax: {} features mais {} poids",
+                    enabled.len(),
+                    config.weights.len()
+                ));
+            }
+            let weights = config.weights.clone();
+            Ok(Box::new(crate::search::ExpectimaxAgent::new(
+                move |board| crate::features::evaluate(board, &enabled, &weights),
+                config.search_depth,
+            )))
+        }
         other => Err(format!("agent inconnu: '{other}'")),
     }
 }
@@ -160,6 +196,9 @@ mod tests {
             max_moves: Some(500),
             mc_simulations: default_mc_simulations(),
             mc_rollout_moves: default_mc_rollout_moves(),
+            features: Vec::new(),
+            weights: Vec::new(),
+            search_depth: default_search_depth(),
         }
     }
 
