@@ -41,6 +41,37 @@ fn replay(py: Python<'_>, seed: u64, moves: Vec<u8>) -> PyResult<PyObject> {
     result_to_dict(py, g).map(|d| d.into())
 }
 
+/// Rejoue une partie coup par coup avec, à chaque étape, le plateau avant
+/// le coup et le score immédiat de chacune des 4 directions (chapitre 9 :
+/// viewer de replays).
+#[pyfunction]
+fn replay_trajectory(py: Python<'_>, seed: u64, moves: Vec<u8>) -> PyResult<Vec<PyObject>> {
+    let steps = g2048_core::runner::replay_trajectory(seed, &moves).map_err(PyValueError::new_err)?;
+    steps
+        .into_iter()
+        .map(|step| {
+            let d = PyDict::new_bound(py);
+            d.set_item("board_before", step.board_before.to_vec())?;
+            d.set_item("chosen_direction", step.chosen_direction)?;
+            d.set_item("gained", step.gained)?;
+            d.set_item("score_after", step.score_after)?;
+            let options: Vec<PyObject> = step
+                .move_options
+                .into_iter()
+                .map(|opt| {
+                    let od = PyDict::new_bound(py);
+                    od.set_item("direction", opt.direction)?;
+                    od.set_item("legal", opt.legal)?;
+                    od.set_item("gained", opt.gained)?;
+                    Ok::<PyObject, PyErr>(od.into())
+                })
+                .collect::<PyResult<_>>()?;
+            d.set_item("move_options", options)?;
+            Ok(d.into())
+        })
+        .collect()
+}
+
 /// API coup par coup type Gymnasium, plus lente mais utile pour le
 /// débogage et le deep RL (chapitre 8).
 #[pyclass]
@@ -292,6 +323,7 @@ fn _g2048(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hello, m)?)?;
     m.add_function(wrap_pyfunction!(run_batch, m)?)?;
     m.add_function(wrap_pyfunction!(replay, m)?)?;
+    m.add_function(wrap_pyfunction!(replay_trajectory, m)?)?;
     m.add_function(wrap_pyfunction!(train_evolution, m)?)?;
     m.add_function(wrap_pyfunction!(train_td_features, m)?)?;
     m.add_function(wrap_pyfunction!(train_td_ntuple, m)?)?;

@@ -3,7 +3,7 @@
 //! seed et d'une séquence de coups.
 
 use crate::agent::{Agent, CornerAgent, GreedyAgent, MonteCarloAgent, RandomAgent};
-use crate::{Direction, GameState};
+use crate::{apply_move, Direction, GameState};
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use rayon::prelude::*;
@@ -183,6 +183,74 @@ pub fn replay(seed: u64, moves: &[u8]) -> Result<GameResult, String> {
     })
 }
 
+#[derive(Debug, Clone)]
+pub struct MoveOption {
+    pub direction: u8,
+    pub legal: bool,
+    pub gained: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrajectoryStep {
+    /// Plateau avant le coup (16 exposants, case 0 = haut-gauche).
+    pub board_before: [u8; 16],
+    pub chosen_direction: u8,
+    pub gained: u32,
+    pub score_after: u64,
+    /// Pour chaque direction : légale ou non, et score immédiat si jouée.
+    /// Calculé sur le plateau brut du jeu, indépendamment de l'agent
+    /// d'origine (chapitre 9 : viewer).
+    pub move_options: Vec<MoveOption>,
+}
+
+fn board_to_exponents(board: u64) -> [u8; 16] {
+    let mut cells = [0u8; 16];
+    for (i, cell) in cells.iter_mut().enumerate() {
+        *cell = ((board >> (i * 4)) & 0xF) as u8;
+    }
+    cells
+}
+
+/// Rejoue une partie coup par coup et retourne, pour chaque coup, le
+/// plateau avant, le coup choisi et le score immédiat de chacune des 4
+/// directions (jouable ou non) — pour le viewer de replays (chapitre 9).
+pub fn replay_trajectory(seed: u64, moves: &[u8]) -> Result<Vec<TrajectoryStep>, String> {
+    let mut state = GameState::new(seed);
+    let mut steps = Vec::with_capacity(moves.len());
+
+    for &m in moves {
+        let board_before = state.board();
+        let move_options = Direction::ALL
+            .iter()
+            .map(|&d| {
+                let (after, gained) = apply_move(board_before, d);
+                MoveOption {
+                    direction: direction_to_u8(d),
+                    legal: after != board_before,
+                    gained,
+                }
+            })
+            .collect();
+
+        let dir = u8_to_direction(m);
+        let (_, gained) = apply_move(board_before, dir);
+        if !state.apply_move(dir) {
+            return Err(format!("coup illégal enregistré à l'index {m}"));
+        }
+        state.spawn();
+
+        steps.push(TrajectoryStep {
+            board_before: board_to_exponents(board_before),
+            chosen_direction: m,
+            gained,
+            score_after: state.score(),
+            move_options,
+        });
+    }
+
+    Ok(steps)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +301,23 @@ mod tests {
             config.mc_rollout_moves = 20;
             let results = run_batch(&config).unwrap();
             assert_eq!(results.len(), 2);
+        }
+    }
+
+    #[test]
+    fn replay_trajectory_matches_replay_final_score_and_has_one_step_per_move() {
+        let config = sample_config();
+        let results = run_batch(&config).unwrap();
+        for original in &results {
+            let trajectory = replay_trajectory(original.seed, &original.moves).unwrap();
+            assert_eq!(trajectory.len(), original.moves.len());
+            if let Some(last) = trajectory.last() {
+                assert_eq!(last.score_after, original.score);
+            }
+            for step in &trajectory {
+                assert_eq!(step.move_options.len(), 4);
+                assert!(step.move_options.iter().any(|m| m.legal));
+            }
         }
     }
 

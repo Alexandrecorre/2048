@@ -13,6 +13,8 @@ dependencies = ["polars"]
 dev = ["pytest", "maturin"]
 # Chapitre 8 (optionnel) : deep RL, non nécessaire au reste du projet.
 deep_rl = ["torch"]
+# Chapitre 9 : API du dashboard/viewer.
+ui = ["fastapi", "uvicorn[standard]", "duckdb"]
 
 [tool.maturin]
 manifest-path = "crates/py-bindings/Cargo.toml"
