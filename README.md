@@ -45,3 +45,11 @@
 ```
 
 Voir [plan.txt](plan.txt) pour le détail des chapitres.
+
+## Résultats et documentation
+
+- [Chapitre 4 — Tableau de référence des agents](docs/chapitre4_reference.md)
+- [Chapitre 6 — Matrice pistes × méthode d'apprentissage](docs/chapitre6_matrix.md)
+- [Chapitre 7 — Profondeur de recherche × qualité de l'évaluation](docs/chapitre7_search.md)
+- [Chapitre 10 — Synthèse (une réponse par question de recherche)](docs/chapitre10_synthese.md)
+- [ui/README.md](ui/README.md) — lancer le dashboard et le viewer
