@@ -21,15 +21,7 @@ from ._g2048 import (
     train_td_features,
     train_td_ntuple,
 )
-
-ALL_FEATURES = [
-    "empty_cells",
-    "monotonicity",
-    "smoothness",
-    "max_tile_in_corner",
-    "merges_available",
-    "snake_weighted",
-]
+from .features import ALL_FEATURES
 
 
 def ablation_feature_sets() -> dict[str, list[str]]:
@@ -63,7 +55,16 @@ class RunResult:
     history: list[dict] = field(default_factory=list)
 
 
-def run_evolution(feature_set: str, enabled: list[str], *, seed: int = 0) -> RunResult:
+def run_evolution(
+    feature_set: str,
+    enabled: list[str],
+    *,
+    seed: int = 0,
+    population_size: int = 24,
+    generations: int = 15,
+    games_per_eval: int = 6,
+    max_moves: int = 1500,
+) -> RunResult:
     if not enabled:
         # Rien à optimiser : évaluation constante (=0), la politique se
         # réduit au score immédiat des fusions (équivalent à l'agent
@@ -74,10 +75,10 @@ def run_evolution(feature_set: str, enabled: list[str], *, seed: int = 0) -> Run
 
     result = train_evolution(
         enabled,
-        population_size=24,
-        generations=15,
-        games_per_eval=6,
-        max_moves=1500,
+        population_size=population_size,
+        generations=generations,
+        games_per_eval=games_per_eval,
+        max_moves=max_moves,
         mutation_std=0.3,
         elite_fraction=0.25,
         seed=seed,
@@ -89,7 +90,17 @@ def run_evolution(feature_set: str, enabled: list[str], *, seed: int = 0) -> Run
     return RunResult(feature_set, "evolution", mean, lo, hi, result["history"])
 
 
-def run_td_features(feature_set: str, enabled: list[str], *, seed: int = 0) -> RunResult:
+def run_td_features(
+    feature_set: str,
+    enabled: list[str],
+    *,
+    seed: int = 0,
+    games: int = 2000,
+    max_moves: int = 3000,
+    alpha: float = 0.001,
+    eval_every: int = 200,
+    eval_games: int = 20,
+) -> RunResult:
     if not enabled:
         # Idem : rien à apprendre sans piste, ligne de base "aucune piste".
         scores = scores_of_feature_weights([], [], num_games=100, max_moves=3000, seed_offset=10_000)
@@ -98,12 +109,12 @@ def run_td_features(feature_set: str, enabled: list[str], *, seed: int = 0) -> R
 
     result = train_td_features(
         enabled,
-        games=2000,
-        max_moves=3000,
-        alpha=0.001,
+        games=games,
+        max_moves=max_moves,
+        alpha=alpha,
         seed=seed,
-        eval_every=200,
-        eval_games=20,
+        eval_every=eval_every,
+        eval_games=eval_games,
     )
     scores = scores_of_feature_weights(
         enabled, result["weights"], num_games=100, max_moves=3000, seed_offset=10_000

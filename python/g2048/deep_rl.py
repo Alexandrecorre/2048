@@ -17,7 +17,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ._g2048 import Env
+from ._g2048 import Env, compute_features
+from .experience import EXPERIENCE_PATH, load_experience
+from .features import DEFAULT_FEATURES as ALL_FEATURES
 
 NUM_ACTIONS = 4
 NUM_CELLS = 16
@@ -73,24 +75,52 @@ class DqnConfig:
     eval_every: int = 50
     eval_games: int = 5
     seed: int = 0
+    # Précharge le buffer de replay avec les transitions du jeu de
+    # données d'expérience persistant (meilleures parties de toutes les
+    # expériences déjà lancées, cf. experience.py) avant l'auto-play.
+    warm_start_from_experience: bool = False
 
 
-ALL_FEATURES = [
-    "empty_cells",
-    "monotonicity",
-    "smoothness",
-    "max_tile_in_corner",
-    "merges_available",
-    "snake_weighted",
-]
+def _encode_from_exponents(exponents: list[int], config: DqnConfig) -> torch.Tensor:
+    if config.representation == "onehot":
+        return encode_onehot(exponents)
+    if config.representation == "features":
+        return torch.tensor(compute_features(exponents, config.features), dtype=torch.float32)
+    raise ValueError(f"représentation inconnue: {config.representation}")
 
 
 def _encode(env: Env, config: DqnConfig) -> torch.Tensor:
-    if config.representation == "onehot":
-        return encode_onehot(env.observation())
-    if config.representation == "features":
-        return torch.tensor(env.features(config.features), dtype=torch.float32)
-    raise ValueError(f"représentation inconnue: {config.representation}")
+    return _encode_from_exponents(env.observation(), config)
+
+
+def load_experience_into_buffer(
+    buffer: deque[Transition], config: DqnConfig, dataset_path: Path = EXPERIENCE_PATH
+) -> int:
+    """Convertit le jeu de données d'expérience persistant en transitions
+    DQN (encodées selon `config.representation`) et les ajoute au buffer.
+    Retourne le nombre de transitions ajoutées."""
+    df = load_experience(dataset_path)
+    if df is None or df.height == 0:
+        return 0
+
+    added = 0
+    for _keys, group in df.sort("step_index").group_by(["source_experiment", "seed"]):
+        rows = group.sort("step_index").to_dicts()
+        for i, row in enumerate(rows):
+            state = _encode_from_exponents(row["board_before"], config)
+            reward = row["gained"] * config.reward_scale
+            if not row["terminal"] and i + 1 < len(rows):
+                next_row = rows[i + 1]
+                next_state = _encode_from_exponents(next_row["board_before"], config)
+                legal_next_actions = [d for d, ok in enumerate(next_row["legal"]) if ok]
+            else:
+                next_state = None
+                legal_next_actions = []
+            buffer.append(
+                Transition(state, row["chosen_direction"], reward, next_state, legal_next_actions)
+            )
+            added += 1
+    return added
 
 
 def _input_dim(config: DqnConfig) -> int:
@@ -149,6 +179,9 @@ def train_dqn(config: DqnConfig) -> tuple[QNetwork, list[dict]]:
     target_net.load_state_dict(net.state_dict())
     optimizer = torch.optim.Adam(net.parameters(), lr=config.lr)
     buffer: deque[Transition] = deque(maxlen=config.buffer_size)
+
+    if config.warm_start_from_experience:
+        load_experience_into_buffer(buffer, config)
 
     history = []
     steps_done = 0

@@ -13,18 +13,11 @@ from pathlib import Path
 import polars as pl
 
 from ._g2048 import run_expectimax, train_td_features
-
-ALL_FEATURES = [
-    "empty_cells",
-    "monotonicity",
-    "smoothness",
-    "max_tile_in_corner",
-    "merges_available",
-    "snake_weighted",
-]
+from .features import DEFAULT_FEATURES as ALL_FEATURES
 
 # "Pauvre" : une seule piste faible (chapitre 6 : proche de la ligne de
-# base "aucune piste"). "Riche" : poids appris par TD sur les 6 pistes.
+# base "aucune piste"). "Riche" : poids appris par TD sur les pistes par
+# défaut (chapitre 6 : snake_weighted exclue, voir features.py).
 POOR_FEATURES = ["empty_cells"]
 POOR_WEIGHTS = [1.0]
 

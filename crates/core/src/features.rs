@@ -111,29 +111,49 @@ pub fn monotonicity(board: u64) -> f64 {
     1.0 - (total_penalty as f64 / worst_penalty as f64)
 }
 
-/// Mesure à quel point les tuiles voisines ont des valeurs proches
-/// (différence d'exposants faible = plateau "lisse", plus facile à
-/// fusionner). Normalisée dans `[0, 1]`, 1 = parfaitement lisse.
+/// Mesure à quel point les tuiles *occupées* voisines ont des valeurs
+/// proches (favorise les chaînes de fusion, ex: 8 à côté de 16, lui-même
+/// à côté de 32), sans imposer d'ordre global figé comme un serpent. La
+/// récompense décroît exponentiellement avec l'écart d'exposant (1.0 si
+/// identique, 0.5 si écart de 1, 0.25 si écart de 2, ...) plutôt que de
+/// pénaliser linéairement les gros écarts : un grand écart ailleurs sur
+/// le plateau ne doit pas annuler l'intérêt d'une chaîne locale correcte.
+///
+/// Les paires impliquant une case vide ne sont pas comptées : avoir de
+/// l'espace libre est déjà récompensé par `empty_cells`, ça ne doit pas
+/// être pénalisé ici comme un "écart" avec une case voisine vide.
+/// Normalisée dans `[0, 1]` (moyenne sur les paires occupées évaluées ;
+/// 1.0 par convention s'il n'y a pas assez de tuiles pour former une
+/// paire).
 pub fn smoothness(board: u64) -> f64 {
-    let mut total_diff = 0i64;
-    let mut num_pairs = 0i64;
+    let mut total = 0.0f64;
+    let mut num_pairs = 0u32;
+
+    let score_pair = |a: u8, b: u8, total: &mut f64, num_pairs: &mut u32| {
+        if a != 0 && b != 0 {
+            let diff = (a as i32 - b as i32).abs();
+            *total += 2f64.powi(-diff);
+            *num_pairs += 1;
+        }
+    };
+
     for r in 0..4 {
         for c in 0..4 {
-            let v = cell(board, r, c) as i64;
+            let v = cell(board, r, c);
             if c + 1 < 4 {
-                let right = cell(board, r, c + 1) as i64;
-                total_diff += (v - right).abs();
-                num_pairs += 1;
+                score_pair(v, cell(board, r, c + 1), &mut total, &mut num_pairs);
             }
             if r + 1 < 4 {
-                let down = cell(board, r + 1, c) as i64;
-                total_diff += (v - down).abs();
-                num_pairs += 1;
+                score_pair(v, cell(board, r + 1, c), &mut total, &mut num_pairs);
             }
         }
     }
-    let worst = num_pairs * 15;
-    1.0 - (total_diff as f64 / worst as f64)
+
+    if num_pairs == 0 {
+        1.0
+    } else {
+        total / num_pairs as f64
+    }
 }
 
 /// 1.0 si la tuile de plus grande valeur est dans un des quatre coins,
@@ -269,6 +289,29 @@ mod tests {
     fn smoothness_is_maximal_on_a_uniform_board() {
         let board = board_from_cells([3; 16]);
         assert!((smoothness(board) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn smoothness_rewards_a_near_doubling_chain_regardless_of_position() {
+        // 8 (exp 3) à côté de 16 (exp 4) à côté de 32 (exp 5) : pas de
+        // serpent, juste une chaîne locale de valeurs proches.
+        #[rustfmt::skip]
+        let board = board_from_cells([
+            3, 4, 5, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+        ]);
+        // 2 paires occupées, écart de 1 à chaque fois -> 0.5 chacune.
+        assert!((smoothness(board) - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn smoothness_ignores_adjacency_with_empty_cells() {
+        // Une unique tuile entourée de vide ne doit être ni pénalisée ni
+        // récompensée : aucune paire occupée-occupée à évaluer.
+        let board = board_from_cells([5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(smoothness(board), 1.0);
     }
 
     #[test]

@@ -44,6 +44,17 @@ def main(argv: list[str] | None = None) -> None:
     dqn_parser.add_argument("--episodes", type=int, default=500)
     dqn_parser.add_argument("--max-moves", type=int, default=1000)
     dqn_parser.add_argument("--seed", type=int, default=0)
+    dqn_parser.add_argument(
+        "--warm-start",
+        action="store_true",
+        help="Précharge le buffer avec le jeu de données d'expérience persistant",
+    )
+
+    experience_parser = subparsers.add_parser(
+        "build-experience",
+        help="Reconstruit le jeu de données d'expérience à partir de results/*/ existants",
+    )
+    experience_parser.add_argument("results_root", type=Path, nargs="?", default=Path("results"))
 
     args = parser.parse_args(argv)
 
@@ -82,12 +93,25 @@ def main(argv: list[str] | None = None) -> None:
             episodes=args.episodes,
             max_moves=args.max_moves,
             seed=args.seed,
+            warm_start_from_experience=args.warm_start,
         )
         net, history = train_dqn(config)
         save_weights(net, args.out_dir / f"dqn_{args.representation}.pt")
         pl.DataFrame(history).write_parquet(args.out_dir / f"dqn_{args.representation}_history.parquet")
         print(f"Historique (dernier point) : {history[-1] if history else 'aucun'}")
         print(f"Poids et historique écrits dans {args.out_dir}")
+    elif args.command == "build-experience":
+        from .experience import TOP_K_GAMES, append_experience
+
+        total = 0
+        for exp_dir in sorted(args.results_root.iterdir()):
+            if not exp_dir.is_dir() or not (exp_dir / "results.parquet").exists():
+                continue
+            added = append_experience(exp_dir, top_k=TOP_K_GAMES)
+            if added:
+                print(f"  {exp_dir.name}: +{added} transitions")
+            total += added
+        print(f"Total : {total} transitions dans {args.results_root / 'experience' / 'dataset.parquet'}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from pathlib import Path
 import polars as pl
 
 from ._g2048 import run_batch as _run_batch
+from .experience import append_experience
 
 
 @dataclass
@@ -86,5 +87,9 @@ def run_experiment(config_path: Path, results_root: Path = Path("results")) -> P
         "timestamp": datetime.now().isoformat(),
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+    # Alimente le jeu de données d'expérience persistant (meilleures
+    # parties de cette expérience, taguées par agent) — voir experience.py.
+    append_experience(out_dir, dataset_path=results_root / "experience" / "dataset.parquet")
 
     return out_dir

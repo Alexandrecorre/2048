@@ -1,5 +1,12 @@
 # Chapitre 6 — Matrice pistes × méthode d'apprentissage × performance
 
+> **Mise à jour** : la feature `smoothness` a été affinée après ce run
+> (voir [experience.md](experience.md)) — les chiffres ci-dessous ne
+> reflètent plus le code actuel pour toute config incluant `smoothness`.
+> Les conclusions qualitatives (glouton simple > 1 seule piste faible,
+> etc.) restent valides ; pour le détail à jour sur smoothness/
+> monotonicity/snake_weighted, voir `experience.md`.
+
 Produit par `python -m g2048 ablation results/ablation_chapter6 --seed 0`
 ([`python/g2048/ablation.py`](../python/g2048/ablation.py)). Profondeur de
 recherche fixée à 1 pour toute cette phase (agent `EvalAgent` : coup qui

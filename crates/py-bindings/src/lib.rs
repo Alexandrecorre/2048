@@ -145,6 +145,19 @@ fn parse_features(names: Vec<String>) -> PyResult<Vec<g2048_core::features::Feat
         .collect()
 }
 
+/// Calcule les features (chapitre 5) à partir de 16 exposants bruts,
+/// sans avoir besoin d'une instance `Env` — utile pour ré-encoder des
+/// plateaux stockés (ex: le jeu de données d'expérience persistant).
+#[pyfunction]
+fn compute_features(exponents: Vec<u8>, enabled: Vec<String>) -> PyResult<Vec<f64>> {
+    let enabled = parse_features(enabled)?;
+    let mut board = 0u64;
+    for (i, &e) in exponents.iter().enumerate().take(16) {
+        board |= (e as u64) << (i * 4);
+    }
+    Ok(g2048_core::features::compute(board, &enabled))
+}
+
 fn history_to_pylist(
     py: Python<'_>,
     history: Vec<g2048_core::train::LearningPoint>,
@@ -330,6 +343,7 @@ fn _g2048(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(train_td_ntuple, m)?)?;
     m.add_function(wrap_pyfunction!(scores_of_feature_weights, m)?)?;
     m.add_function(wrap_pyfunction!(scores_of_ntuple_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_features, m)?)?;
     m.add_function(wrap_pyfunction!(run_expectimax, m)?)?;
     m.add_class::<Env>()?;
     Ok(())
